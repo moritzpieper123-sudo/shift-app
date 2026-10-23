@@ -401,7 +401,7 @@ function viewSettings() {
   <h2>Datensicherung</h2>
   <div class="glass list">
     <button class="sess" data-act="backup"><span class="set-ic">⇪</span><div class="grow"><div class="name">Backup speichern</div><div class="meta">Alle Schichten als Datei sichern</div></div><span class="chev">›</span></button>
-    <label class="sess" for="restore"><span class="set-ic">⇩</span><div class="grow"><div class="name">Backup wiederherstellen</div><div class="meta">Aus einer gesicherten Datei laden</div></div><span class="chev">›</span></label>
+    <label class="sess" for="restore"><span class="set-ic">⇩</span><div class="grow"><div class="name">Backup einlesen</div><div class="meta">Aus einer Datei laden oder hinzufügen</div></div><span class="chev">›</span></label>
   </div>
   <input type="file" id="restore" accept="application/json,.json" hidden>
   <p class="note">Deine Daten liegen nur auf diesem iPhone. Speichere ab und zu ein Backup, zum Beispiel in iCloud Drive, damit nichts verloren geht, wenn du das Handy wechselst.</p>
@@ -409,23 +409,42 @@ function viewSettings() {
   <div class="glass card"><div class="row"><div class="grow"><div class="meta">Gespeicherte Schichten</div><div class="name">${n}</div></div>
     ${first ? `<div style="text-align:right"><div class="meta">Erfasst seit</div><div class="name">${fmt(first, { day: 'numeric', month: 'short', year: 'numeric' })}</div></div>` : ''}</div></div>
   <button class="btn block danger" data-act="wipe" style="margin-top:8px">Alle Daten löschen</button>
-  <p class="note center">Shift · Version 1.0</p>`;
+  <p class="note center">Shift · Version 1.1</p>`;
 }
 function backup() {
   const data = JSON.stringify({ app: 'shift', version: 1, exported: Date.now(), sessions: S.sessions, settings: S.settings }, null, 1);
   shareFile(new File([data], 'Shift-Backup_' + toDateInput(Date.now()) + '.json', { type: 'application/json' }), 'Shift Backup');
 }
+// Lokale Zeitangaben ({ date: 'JJJJ-MM-TT', start: 'HH:MM', end: 'HH:MM' }) werden in Zeitstempel umgewandelt,
+// damit Import-Dateien unabhängig von der Zeitzone des Geräts funktionieren.
+function fromFile(x) {
+  if (typeof x.start === 'number' && typeof x.end === 'number' && Array.isArray(x.pauses)) return { id: x.id || uid(), start: x.start, end: x.end, pauses: x.pauses };
+  if (typeof x.date !== 'string' || typeof x.start !== 'string' || typeof x.end !== 'string') return null;
+  const b = buildSession({ date: x.date, start: x.start, end: x.end, pauses: x.pauses || [] }, true);
+  return typeof b === 'string' ? null : { id: x.id || uid(), ...b };
+}
 function restore(file) {
   const r = new FileReader();
   r.onload = () => {
     let d; try { d = JSON.parse(r.result); } catch (e) {}
-    const ok = d && Array.isArray(d.sessions) && d.sessions.every(x => typeof x.start === 'number' && typeof x.end === 'number' && Array.isArray(x.pauses));
-    if (!ok) return toast('Diese Datei ist kein gültiges Shift-Backup');
-    confirmSheet('Backup wiederherstellen?', `Die Datei enthält ${d.sessions.length} Schichten. Deine aktuellen ${S.sessions.length} Schichten werden dadurch ersetzt.`, 'Wiederherstellen', false, () => {
-      S.sessions = d.sessions.map(x => ({ id: x.id || uid(), start: x.start, end: x.end, pauses: x.pauses }));
+    const list = d && Array.isArray(d.sessions) ? d.sessions.map(fromFile) : [];
+    if (!list.length || list.includes(null)) return toast('Diese Datei ist kein gültiges Shift-Backup');
+    const replace = () => {
+      S.sessions = list;
       if (d.settings) S.settings = { ...S.settings, ...d.settings };
       save(); render(); toast('Backup wiederhergestellt');
-    });
+    };
+    // Hinzufügen übernimmt nur Schichten, die sich mit keiner vorhandenen überschneiden – doppeltes Einlesen schadet also nicht.
+    const merge = () => {
+      const fresh = list.filter(n => !S.sessions.some(s => s.start < n.end && s.end > n.start) && !(S.active && n.end > S.active.start));
+      S.sessions.push(...fresh); save(); render();
+      toast(fresh.length ? fresh.length + ' Schichten hinzugefügt' : 'Alle Schichten waren schon vorhanden');
+    };
+    if (!S.sessions.length) return confirmSheet('Backup wiederherstellen?', `Die Datei enthält ${list.length} Schichten.`, 'Wiederherstellen', false, replace);
+    openSheet(`<h3>Backup einlesen</h3><p class="sheet-text">Die Datei enthält ${list.length} Schichten. Du hast aktuell ${S.sessions.length} Schichten. Möchtest du die Schichten aus der Datei hinzufügen oder deine aktuellen Schichten damit ersetzen?</p>
+      <div class="actions"><button class="btn primary" data-merge>Hinzufügen</button></div>
+      <div class="actions" style="margin-top:10px"><button class="btn" data-close>Abbrechen</button><button class="btn danger" data-replace>Ersetzen</button></div>`,
+      e => { if (e.target.closest('[data-merge]')) { closeModal(); merge(); } if (e.target.closest('[data-replace]')) { closeModal(); replace(); } });
   };
   r.readAsText(file);
 }

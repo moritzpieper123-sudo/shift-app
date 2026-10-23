@@ -1,6 +1,7 @@
 {
-  "name": "Shift – Work Time",
+  "name": "Shift – Arbeitszeit",
   "short_name": "Shift",
+  "lang": "de",
   "start_url": "./",
   "scope": "./",
   "display": "standalone",

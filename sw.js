@@ -1,4 +1,4 @@
-const CACHE = 'shift-v1';
+const CACHE = 'shift-v2';
 const FILES = ['./', 'index.html', 'style.css', 'app.js', 'manifest.webmanifest', 'icons/icon.svg',
   'lib/jspdf.umd.min.js', 'lib/jspdf.plugin.autotable.min.js'];
 self.addEventListener('install', e => {
